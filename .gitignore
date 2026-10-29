@@ -1,0 +1,5 @@
+data/*.csv
+runs/
+__pycache__/
+*.log
+.DS_Store
