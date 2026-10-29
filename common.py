@@ -1,7 +1,7 @@
-"""Chuẩn bị dữ liệu dùng chung, sao chép đúng protocol của ADA-GNetIDS (main_code.py).
+"""Shared data preparation, copying the ADA-GNetIDS protocol (main_code.py).
 
-Giữ nguyên: file part-00000, DoS -> DDoS, bỏ cột hằng, fillna(0), clip ±1e15,
-LabelEncoder, chia 70/10/20 theo từng lớp giữ thứ tự gốc, StandardScaler fit trên train.
+Kept as in the baseline: file part-00000, DoS -> DDoS, constant columns dropped, fillna(0), clip at ±1e15,
+LabelEncoder, class-wise 70/10/20 split in the original row order, StandardScaler fitted on train.
 """
 import os
 import numpy as np
@@ -12,14 +12,14 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 CICIOT_PATH = os.path.join(ROOT, 'data', 'Dataset2-CICIoT2023_part-00000-rouped_labels.csv')
 
 
-# SPLIT=random xáo thứ tự trong từng lớp trước khi cắt (cùng số mẫu mỗi phần, seed cố định 0,
-# không phụ thuộc seed model); DROP=IAT,... bỏ các cột này. Mặc định giữ nguyên protocol baseline.
+# SPLIT=random permutes each class before cutting it (same part sizes, fixed seed 0,
+# independent of the model seed); DROP=IAT,... removes these columns. The default keeps the baseline protocol.
 SPLIT = os.environ.get('SPLIT', 'ordered')
 DROP = [c for c in os.environ.get('DROP', '').split(',') if c]
 
 
 def temporal_stratified_split(df, label_col='label_enc', train_frac=0.70, val_frac=0.10):
-    # Chép nguyên văn từ baseline (chỉ thêm nhánh SPLIT=random)
+    # Copied verbatim from the baseline (only the SPLIT=random branch is added)
     train_idx, val_idx, test_idx = [], [], []
     rng = np.random.default_rng(0)
     for _, group in df.groupby(label_col, sort=False):
@@ -46,7 +46,7 @@ def temporal_stratified_split(df, label_col='label_enc', train_frac=0.70, val_fr
 
 
 def signed_log1p(x):
-    # Biến đổi không cần fit (không rò rỉ): nén đuôi dài của Rate, IAT, Tot sum...
+    # Transform without fitting (no leakage): compresses the long tails of Rate, IAT, Tot sum, ...
     return np.sign(x) * np.log1p(np.abs(x))
 
 

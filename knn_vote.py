@@ -1,5 +1,5 @@
-"""kNN majority vote trên đúng đồ thị của XGAT (k=10 láng giềng train, cosine).
-Không có tham số học và không ngẫu nhiên; hòa phiếu chọn lớp có tổng cosine lớn hơn."""
+"""kNN majority vote over the exact XGAT graph (k=10 training neighbours, cosine).
+No learned parameters and no randomness; ties go to the class with the larger total cosine."""
 import numpy as np, torch, json, os
 from xgat import build, pick_device
 from common import metrics

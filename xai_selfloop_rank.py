@@ -1,5 +1,5 @@
-"""IG (log p_c, baseline 0, 256 bước) cho model self-loop trên cùng 1.540 node,
-so xếp hạng toàn cục với XGAT (Spearman)."""
+"""IG (log p_c, zero baseline, 256 steps) for the self-loop model on the same 1,540 nodes,
+and Spearman correlation of its global ranking with that of XGAT."""
 import json, os, numpy as np, torch
 from scipy.stats import spearmanr
 from xgat import XGAT, build, pick_device
@@ -30,7 +30,7 @@ for s in SEEDS:
         T = T_all[i:i + BATCH]
         mask = torch.zeros(len(T), nbr.shape[1], dtype=torch.bool, device=device)
         with torch.no_grad(): pred = m.forward_targets(x, nbr, ew, T, nbr_mask_T=mask).argmax(1)
-        with torch.no_grad():   # kiểm tra: forward có mask khớp forward self-only toàn đồ thị
+        with torch.no_grad():   # check: the masked forward pass matches the self-only full-graph forward pass
             assert torch.allclose(m(x, nbr, ew)[T[:32]], m.forward_targets(x, nbr, ew, T[:32], nbr_mask_T=mask[:32]), atol=1e-3)
         IG.append(ig_masked(m, x, nbr, ew, T, pred, mask).cpu()); PR.append(pred.cpu())
     ig = torch.cat(IG).numpy()

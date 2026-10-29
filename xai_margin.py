@@ -1,7 +1,7 @@
-"""IG cho logit margin m_c = z_c - max_{c'!=c} z_{c'} thay vì log p_c, baseline 0 như cũ.
-log p_c bão hòa ở DDoS (p_c(0) > 0.99999) nên IG gần 0; margin không bão hòa.
-Đo: completeness (sum IG so với m(x) - m(0)), sum |IG| theo lớp, xếp hạng đặc trưng cho DDoS,
-deletion/insertion theo thứ tự IG-margin (p_c, như faithfulness.py). Dùng lại node đã giải thích (xai_seed*.npz)."""
+"""IG of the logit margin m_c = z_c - max_{c'!=c} z_{c'} instead of log p_c, zero baseline as before.
+log p_c saturates for DDoS (p_c(0) > 0.99999), so IG is close to 0; the margin does not saturate.
+Measures: completeness (sum IG against m(x) - m(0)), sum |IG| per class, feature ranking for DDoS,
+deletion/insertion in IG-margin order (p_c, as in faithfulness.py). Reuses the explained nodes (xai_seed*.npz)."""
 import json, os, time
 import numpy as np
 import torch

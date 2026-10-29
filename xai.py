@@ -1,12 +1,12 @@
-"""XAI cho XGAT: Integrated Gradients (đặc trưng) + attention GATv2 (cạnh), kèm đánh giá giải thích.
+"""XAI for XGAT: Integrated Gradients (features) and GATv2 attention (edges), with evaluation of the explanations.
 
-Đánh giá:
-  - Fidelity+ đặc trưng: thay top-k đặc trưng (theo |IG|) bằng giá trị trung bình train (= 0 sau
-    StandardScaler) rồi đo mức giảm xác suất lớp dự đoán và tỉ lệ đổi nhãn; so với che k đặc trưng ngẫu nhiên.
-  - Fidelity+ cạnh: bỏ top-k láng giềng (theo attention) khỏi node đích; so với bỏ k láng giềng ngẫu nhiên.
-  - Sparsity: phần khối lượng |IG| nằm trong top-5 đặc trưng.
-  - Ổn định giữa seed: Spearman của độ quan trọng toàn cục; Jaccard top-5 theo từng node.
-Mẫu giải thích: node test, tối đa N_PER_CLASS mỗi lớp, chọn ngẫu nhiên cố định (seed 123).
+Evaluation:
+  - Feature fidelity+: replace the top-k features (by |IG|) with the training mean (= 0 after
+    StandardScaler), then measure the drop in predicted-class probability and the label-flip rate; compare with masking k random features.
+  - Edge fidelity+: remove the top-k neighbours (by attention) of the target node; compare with removing k random neighbours.
+  - Sparsity: share of the |IG| mass that falls in the top-5 features.
+  - Stability across seeds: Spearman correlation of global importance; per-node Jaccard of the top-5 features.
+Explained nodes: test nodes, at most N_PER_CLASS per class, drawn at random with a fixed seed (123).
 """
 import json, os, time
 import numpy as np
@@ -17,7 +17,7 @@ from xgat import XGAT, build, pick_device
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.join(ROOT, 'runs', 'main_k10_5seeds')
-OUT = os.path.join(ROOT, 'runs', 'xai_main_k10_ig256')   # bản 32 bước (tổng Riemann phải) ở runs/xai_main_k10
+OUT = os.path.join(ROOT, 'runs', 'xai_main_k10_ig256')   # the 32-step version (right Riemann sum) is in runs/xai_main_k10
 SEEDS = [0, 1, 2, 3, 4]
 N_PER_CLASS = 300
 IG_STEPS = 256
@@ -38,10 +38,10 @@ def probs_T(model, x, nbr, ew, T, mask=None):
 
 
 def integrated_gradients(model, x, nbr, ew, T, target_cls):
-    """IG trên đặc trưng của chính node đích, baseline = 0 (trung bình train sau chuẩn hóa)."""
+    """IG over the features of the target node itself, baseline = 0 (training mean after standardisation)."""
     x0 = x[T].clone()
     total = torch.zeros_like(x0)
-    for a in (torch.arange(IG_STEPS, device=x.device) + 0.5) / IG_STEPS:   # quy tắc trung điểm
+    for a in (torch.arange(IG_STEPS, device=x.device) + 0.5) / IG_STEPS:   # midpoint rule
         xs = x.clone()
         inp = (a * x0).requires_grad_(True)
         xs[T] = inp
@@ -73,13 +73,13 @@ def main():
         idx = test[yt == c]
         pick.append(rng.choice(idx, size=min(N_PER_CLASS, len(idx)), replace=False))
     T_all = torch.tensor(np.sort(np.concatenate(pick)), device=device)
-    print(f'Giải thích {len(T_all)} node test', {names[c]: int((yt == c).sum() if False else len(p)) for c, p in enumerate(pick)}, flush=True)
+    print(f'Explaining {len(T_all)} test nodes', {names[c]: int((yt == c).sum() if False else len(p)) for c, p in enumerate(pick)}, flush=True)
 
     per_seed = {}
     for seed in SEEDS:
         t0 = time.time()
         model = load_model(args, F_, C, seed, device)
-        # kiểm tra forward trên đồ thị con khớp forward toàn đồ thị
+        # check that the subgraph forward pass matches the full-graph forward pass
         with torch.no_grad():
             full = model(x, nbr, ew)[T_all[:64]]
             sub = model.forward_targets(x, nbr, ew, T_all[:64])
@@ -96,25 +96,25 @@ def main():
             p = torch.softmax(logits, 1); pred = p.argmax(1)
             p0 = p.gather(1, pred.view(-1, 1)).squeeze(1)
             ig = integrated_gradients(model, x, nbr, ew, T, pred)
-            att = a2[:, 1:, :].mean(-1)                      # attention tầng 2 lên k láng giềng, trung bình head
+            att = a2[:, 1:, :].mean(-1)                      # layer-2 attention on the k neighbours, averaged over heads
             IG.append(ig.cpu()); ATT.append(att.cpu()); P0.append(p0.cpu()); PRED.append(pred.cpu())
             order_f = ig.abs().argsort(1, descending=True)
             order_e = att.argsort(1, descending=True)
             for k in KS:
-                # đặc trưng: top-k
+                # features: top-k
                 xs = x.clone(); rows = x[T].clone()
                 rows.scatter_(1, order_f[:, :k], 0.0); xs[T] = rows
                 pk = probs_T(model, xs, nbr, ew, T)
                 fid_f[k]['top'].append((p0 - pk.gather(1, pred.view(-1, 1)).squeeze(1)).cpu())
                 fid_f[k]['top_flip'].append((pk.argmax(1) != pred).float().cpu())
-                # đặc trưng: ngẫu nhiên
+                # features: random
                 for _ in range(N_RAND):
                     r = torch.rand(len(T), F_, generator=g).argsort(1)[:, :k].to(device)
                     xs = x.clone(); rows = x[T].clone(); rows.scatter_(1, r, 0.0); xs[T] = rows
                     pk = probs_T(model, xs, nbr, ew, T)
                     fid_f[k]['rand'].append((p0 - pk.gather(1, pred.view(-1, 1)).squeeze(1)).cpu())
                     fid_f[k]['rand_flip'].append((pk.argmax(1) != pred).float().cpu())
-                # cạnh: bỏ top-k láng giềng
+                # edges: remove the top-k neighbours
                 mask = torch.ones(len(T), nbr.shape[1], dtype=torch.bool, device=device)
                 mask.scatter_(1, order_e[:, :k], False)
                 pk = probs_T(model, x, nbr, ew, T, mask)
@@ -146,7 +146,7 @@ def main():
               f'rand {res["feature_fidelity"][3]["rand"]:.4f} | edge Fid+@3 top {res["edge_fidelity"][3]["top"]:.4f} '
               f'rand {res["edge_fidelity"][3]["rand"]:.4f} | sparsity {res["sparsity_top5_mass"]:.3f}', flush=True)
 
-    # ổn định giữa seed
+    # stability across seeds
     gi = np.array([[per_seed[s]['global_importance'][f] for f in feat] for s in SEEDS])
     sp = [spearmanr(gi[i], gi[j]).correlation for i in range(len(SEEDS)) for j in range(i + 1, len(SEEDS))]
     igs = [np.load(os.path.join(OUT, f'xai_seed{s}.npz'))['ig'] for s in SEEDS]

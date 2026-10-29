@@ -1,5 +1,5 @@
-"""IG cho logit margin với baseline = trung bình flow Benign của tập train
-(không gian signed-log đã chuẩn hóa). Deletion/insertion thay đặc trưng bằng baseline này."""
+"""IG of the logit margin with baseline = mean of the Benign training flows
+(in the standardised signed-log space). Deletion/insertion replace features with this baseline."""
 import json, os, time
 import numpy as np
 import torch

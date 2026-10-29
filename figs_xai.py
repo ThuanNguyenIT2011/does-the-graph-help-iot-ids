@@ -1,8 +1,8 @@
-"""Vẽ hình minh họa XAI (Integrated Gradients) cho bài ICCIES. Đọc kết quả của xai.py, không chạy lại model.
+"""XAI figures (Integrated Gradients) for the ICCIES paper. Reads the output of xai.py, does not re-run the model.
 
-Hình 1: độ quan trọng toàn cục (mean |IG|), top-15, thanh lỗi = độ lệch chuẩn qua 5 seed.
-Hình 2: heatmap lớp thật × 12 đặc trưng, chỉ flow dự đoán đúng (n = số flow trung bình mỗi seed).
-Hình 3: giải thích cục bộ cho một flow dự đoán đúng của mỗi lớp (seed 0), IG có dấu, top-8.
+Figure 1: global importance (mean |IG|), top 15, error bars = standard deviation over 5 seeds.
+Figure 2: heatmap of true class x 12 features, correctly predicted flows only (n = mean number of flows per seed).
+Figure 3: local explanation of one correctly predicted flow per class (seed 0), signed IG, top 8.
 """
 import json, os
 import numpy as np
@@ -42,7 +42,7 @@ def main():
     T = D[0]['T']; yt = y_all[T]
     absig = np.stack([np.abs(d['ig']) for d in D])            # (seed, node, feat)
 
-    # Hình 1
+    # Figure 1
     per_seed = absig.mean(1)                                    # (seed, feat)
     m, sd = per_seed.mean(0), per_seed.std(0, ddof=1)
     o = np.argsort(-m)[:15][::-1]
@@ -54,9 +54,9 @@ def main():
     ax.xaxis.grid(True, color=GRID, lw=0.6); ax.set_axisbelow(True)
     save(fig, 'xai_global_importance')
 
-    # Hình 2
+    # Figure 2
     top = np.argsort(-m)[:12]
-    # chỉ các flow mà model của seed đó dự đoán đúng; IG giải thích lớp dự đoán nên khi đúng nó cũng là lớp thật
+    # only flows that the model of that seed predicts correctly; IG explains the predicted class, which is then the true class
     preds = np.stack([d['pred'] for d in D])                      # (seed, node)
     correct = preds == yt[None, :]
     H, n_avg = [], []
@@ -65,7 +65,7 @@ def main():
         H.append(absig[:, :, top][sel].mean(0))
         n_avg.append(sel.sum() / len(SEEDS))
     H = np.stack(H)
-    # bỏ hàng DDoS: baseline 0 đã được dự đoán là DDoS với p ≈ 1 nên tổng IG ≈ 1e-6, chuẩn hóa theo hàng chỉ phóng đại nhiễu
+    # drop the DDoS row: the zero baseline is already predicted as DDoS with p ≈ 1, so sum IG ≈ 1e-6 and row normalisation only amplifies noise
     rows = [c for c in range(len(names)) if names[c] != 'DDoS']
     H = H[rows]
     Hn = H / H.max(1, keepdims=True)
@@ -83,9 +83,9 @@ def main():
     cb.ax.tick_params(labelsize=6, length=0)
     save(fig, 'xai_class_heatmap')
 
-    # Hình 3: seed 0, mỗi lớp một flow dự đoán đúng có độ quan trọng tổng ở trung vị (không chọn ví dụ đẹp nhất)
+    # Figure 3: seed 0, one correctly predicted flow per class whose total importance is at the median (not the nicest example)
     ig0, pred0 = D[0]['ig'], D[0]['pred']
-    # chỉ 4 lớp có đủ flow dự đoán đúng; bỏ DDoS (log-xác suất bão hòa), Brute Force (1 flow), Web-Based (vài flow)
+    # only 4 classes have enough correctly predicted flows; DDoS (saturated log-probability), Brute Force (1 flow), Web-Based (a few flows) are dropped
     show = [names.index(n) for n in ('Benign', 'Mirai', 'Recon', 'Spoofing')]
     ncol = 2; nrow = 2
     fig, axes = plt.subplots(nrow, ncol, figsize=(6.6, 4.4))

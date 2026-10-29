@@ -1,6 +1,6 @@
-"""cách ADA-GNetIDS chọn anchor khi y_hint = y_all so với khi không dùng nhãn.
-Chép đúng nhánh chọn anchor của build_global_anchor_graph (main_code.py dòng 229-249), cấu hình
-No_ADASYN (không có mẫu tổng hợp nên thứ tự node là train, val, test như code gốc)."""
+"""How ADA-GNetIDS chooses anchors with y_hint = y_all compared with label-free sampling.
+Copies the anchor-selection branch of build_global_anchor_graph (main_code.py, lines 229-249), configuration
+No_ADASYN (no synthetic samples, so the node order is train, val, test as in the original code)."""
 import numpy as np
 from common import load_split
 N_ANCHORS = 25_000

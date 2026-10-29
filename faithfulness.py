@@ -1,12 +1,12 @@
-"""Đường cong deletion/insertion cho IG đã lưu (không chạy lại IG, không train lại).
+"""Deletion/insertion curves for the saved IG (IG is not recomputed, no retraining).
 
-Với mỗi flow đã giải thích, xếp 40 đặc trưng theo IG giảm dần (đóng góp ủng hộ lớp dự đoán c trước).
-  - Deletion: lần lượt thay m đặc trưng đầu bảng bằng baseline (0 = trung bình train) và đo p_c, m = 0..40.
-  - Insertion: bắt đầu từ baseline, lần lượt đưa m đặc trưng đầu bảng về giá trị thật và đo p_c.
-So với thứ tự ngẫu nhiên (N_RAND lần). Diện tích dưới đường cong (AUC, trục x chuẩn hóa về [0, 1]):
-deletion càng thấp càng tốt, insertion càng cao càng tốt.
-Lớp DDoS bị loại như trong bài: baseline rơi vào vùng DDoS (p_DDoS(0) > 0,99999).
-Đồ thị và láng giềng giữ nguyên, như xai.py. Ghi runs/xai_main_k10/faithfulness.json và .npz.
+For each explained flow, the 40 features are ranked by decreasing IG (support for the predicted class c first).
+  - Deletion: replace the top m features with the baseline (0 = training mean) and measure p_c, m = 0..40.
+  - Insertion: start from the baseline, restore the top m features to their true values and measure p_c.
+Compared with random orders (N_RAND times). Area under the curve (AUC, x axis normalised to [0, 1]):
+lower is better for deletion, higher is better for insertion.
+DDoS is excluded as in the paper: the baseline falls in the DDoS region (p_DDoS(0) > 0.99999).
+Graph and neighbours are held fixed, as in xai.py. Writes runs/xai_main_k10/faithfulness.json and .npz.
 """
 import json, os, time
 import numpy as np
@@ -20,7 +20,7 @@ N_RAND = 5
 
 @torch.no_grad()
 def curve(model, x, nbr, ew, T, c, x0, order, insertion):
-    """p_c sau khi xóa (hoặc chèn) m đặc trưng đầu theo `order`, m = 0..F. Trả về (|T|, F+1)."""
+    """p_c after deleting (or inserting) the top m features in `order`, m = 0..F. Returns (|T|, F+1)."""
     F_ = x0.shape[1]
     out = []
     keep = torch.zeros_like(x0) if insertion else x0.clone()
@@ -28,7 +28,7 @@ def curve(model, x, nbr, ew, T, c, x0, order, insertion):
         if m > 0:
             j = order[:, m - 1:m]
             keep.scatter_(1, j, x0.gather(1, j) if insertion else 0.0)
-        x[T] = keep                                  # T là node test, không nằm trong láng giềng của nhau
+        x[T] = keep                                  # T are test nodes, none is a neighbour of another
         p = torch.softmax(model.forward_targets(x, nbr, ew, T), 1)
         out.append(p.gather(1, c).squeeze(1))
     x[T] = x0

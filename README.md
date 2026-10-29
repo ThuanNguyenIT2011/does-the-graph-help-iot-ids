@@ -57,5 +57,3 @@ MCC, mean ± standard deviation over five seeds (kNN vote is deterministic).
 
 The no-IAT self-loop run was interrupted after two seeds; `results/noiat_selfloop/results_seeds234.json`
 holds seeds 2 to 4, and the value above combines all five seeds.
-
-Code comments are partly in Vietnamese.

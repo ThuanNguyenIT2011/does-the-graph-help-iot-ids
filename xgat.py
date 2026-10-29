@@ -1,11 +1,11 @@
-"""Mô hình đề xuất: GATv2 trên đồ thị kNN cosine, mỗi node chỉ nối tới các node TRAIN.
+"""XGAT: GATv2 over a cosine kNN graph in which every node links only to TRAINING nodes.
 
-Khác ADA-GNetIDS:
-  - Dựng đồ thị không dùng nhãn (baseline dùng nhãn cả val/test để chọn anchor).
-  - Node val/test chỉ nối tới node train, không nối với nhau.
-  - Độ tương đồng cosine được dùng làm edge feature trong attention (baseline tính nhưng bỏ).
-  - Attention GATv2, có residual, LayerNorm, jumping knowledge và nhánh giữ đặc trưng gốc.
-Vì mọi node có đúng k láng giềng, attention được tính dạng dense (N, k+1, d) cho nhanh trên MPS.
+Differences from ADA-GNetIDS:
+  - The graph is built without labels (the baseline uses val/test labels to choose anchors).
+  - Val/test nodes link only to training nodes, never to each other.
+  - Cosine similarity is used as an edge feature in attention (the baseline computes it but drops it).
+  - GATv2 attention with residual connections, LayerNorm, jumping knowledge, and a branch that keeps the input features.
+Since every node has exactly k neighbours, attention is computed densely as (N, k+1, d), which is fast on MPS.
 """
 import argparse, json, os, time
 import numpy as np
@@ -28,8 +28,8 @@ def pick_device():
 
 @torch.no_grad()
 def knn_to_train(X_all, n_train, k, device, chunk=2048):
-    """Trả về chỉ số k node train gần nhất (cosine) và độ tương đồng cho mọi node.
-    Node train không tự nối với chính nó."""
+    """Return the indices of the k nearest training nodes (cosine) and their similarities for every node.
+    A training node is never linked to itself."""
     Xn = F.normalize(torch.tensor(X_all, device=device), dim=1)
     bank = Xn[:n_train]
     N = Xn.shape[0]
@@ -42,7 +42,7 @@ def knn_to_train(X_all, n_train, k, device, chunk=2048):
         is_train = rows < n_train
         if is_train.any():
             r = torch.nonzero(is_train).squeeze(1)
-            sim[r, rows[r]] = -2.0  # loại chính nó
+            sim[r, rows[r]] = -2.0  # exclude the node itself
         v, i = sim.topk(k, dim=1)
         idx_out[s:s + chunk] = i.cpu()
         sim_out[s:s + chunk] = v.cpu()
@@ -50,7 +50,7 @@ def knn_to_train(X_all, n_train, k, device, chunk=2048):
 
 
 class DenseGATv2Layer(nn.Module):
-    """GATv2 (Brody et al., 2022) trên láng giềng cố định k + self-loop, có edge feature."""
+    """GATv2 (Brody et al., 2022) over fixed k neighbours plus a self-loop, with an edge feature."""
 
     def __init__(self, d_in, d_out, heads=4, edge_dim=1, dropout=0.1):
         super().__init__()
@@ -64,14 +64,14 @@ class DenseGATv2Layer(nn.Module):
         self.dropout = dropout
 
     def forward(self, x, nbr, ew, return_att=False, x_dst=None, nbr_mask=None):
-        # x: (N, d) node nguồn; nbr: (M, k) chỉ số vào x; ew: (M, k, 1) độ tương đồng
-        # x_dst: (M, d) node đích (mặc định x, khi M = N); nbr_mask: (M, k) True = giữ cạnh (dùng cho XAI)
+        # x: (N, d) source nodes; nbr: (M, k) indices into x; ew: (M, k, 1) similarities
+        # x_dst: (M, d) target nodes (default x, when M = N); nbr_mask: (M, k) True = keep the edge (used for XAI)
         M, k = nbr.shape
         x_dst = x if x_dst is None else x_dst
-        xl_all = self.lin_l(x).view(-1, self.h, self.c)        # nguồn (láng giềng)
+        xl_all = self.lin_l(x).view(-1, self.h, self.c)        # sources (neighbours)
         xl_dst = self.lin_l(x_dst).view(M, self.h, self.c)
-        xr = self.lin_r(x_dst).view(M, self.h, self.c)          # đích
-        src = torch.cat([xl_dst.unsqueeze(1), xl_all[nbr]], dim=1)  # (M, k+1, h, c), vị trí 0 là self
+        xr = self.lin_r(x_dst).view(M, self.h, self.c)          # targets
+        src = torch.cat([xl_dst.unsqueeze(1), xl_all[nbr]], dim=1)  # (M, k+1, h, c), position 0 is the node itself
         e_self = torch.ones(M, 1, ew.shape[-1], device=x.device)
         e = self.lin_e(torch.cat([e_self, ew], dim=1)).view(M, k + 1, self.h, self.c)
         z = F.leaky_relu(src + xr.unsqueeze(1) + e, 0.2)
@@ -88,7 +88,7 @@ class DenseGATv2Layer(nn.Module):
 class XGAT(nn.Module):
     def __init__(self, d_in, n_cls, hidden=128, layers=2, heads=4, dropout=0.2, self_only=False):
         super().__init__()
-        self.self_only = self_only   # ablation: che mọi cạnh tới láng giềng, chỉ còn self-loop
+        self.self_only = self_only   # ablation: mask every edge to a neighbour, keep only the self-loop
         self.inp = nn.Sequential(nn.Linear(d_in, hidden), nn.GELU(), nn.Linear(hidden, hidden))
         self.convs = nn.ModuleList([DenseGATv2Layer(hidden, hidden, heads, 1, dropout) for _ in range(layers)])
         self.norms = nn.ModuleList([nn.LayerNorm(hidden) for _ in range(layers)])
@@ -111,17 +111,17 @@ class XGAT(nn.Module):
         return (logits, atts) if return_att else logits
 
     def forward_targets(self, x, nbr, ew, T, nbr_mask_T=None, return_att=False):
-        """Tính logit chỉ cho các node đích T trên đồ thị con 2 bước (cho XAI).
-        Kết quả bằng forward toàn đồ thị khi T không nằm trong láng giềng của nhau
-        (đúng với node test, vì node test chỉ nối tới node train).
-        nbr_mask_T: (|T|, k) che cạnh của chính node đích ở cả hai tầng."""
+        """Compute logits only for the target nodes T on their 2-hop subgraph (for XAI).
+        The result equals the full-graph forward pass when no node of T is a neighbour of another
+        (true for test nodes, which link only to training nodes).
+        nbr_mask_T: (|T|, k) masks the edges of the target nodes themselves in both layers."""
         assert len(self.convs) == 2
         S1 = torch.unique(torch.cat([T, nbr[T].reshape(-1)]))
         S2 = torch.unique(torch.cat([S1, nbr[S1].reshape(-1)]))
         pos2 = torch.full((x.shape[0],), -1, dtype=torch.long, device=x.device); pos2[S2] = torch.arange(len(S2), device=x.device)
         pos1 = torch.full((x.shape[0],), -1, dtype=torch.long, device=x.device); pos1[S1] = torch.arange(len(S1), device=x.device)
         h0_2 = self.inp(x[S2])
-        # tầng 1 cho S1
+        # layer 1 for S1
         m1_mask = None
         if nbr_mask_T is not None:
             m1_mask = torch.ones(len(S1), nbr.shape[1], dtype=torch.bool, device=x.device)
@@ -130,7 +130,7 @@ class XGAT(nn.Module):
         m = self.convs[0](h0_2, pos2[nbr[S1]], ew[S1], return_att, x_dst=h0_1, nbr_mask=m1_mask)
         if return_att: m, a1 = m
         h1_1 = self.norms[0](h0_1 + F.gelu(m))
-        # tầng 2 cho T
+        # layer 2 for T
         h1_T = h1_1[pos1[T]]
         m = self.convs[1](h1_1, pos1[nbr[T]], ew[T], return_att, x_dst=h1_T, nbr_mask=nbr_mask_T)
         if return_att: m, a2 = m
@@ -165,7 +165,7 @@ def train_one(G, args, seed, device, out_dir):
     C = len(G['label_names'])
     counts = torch.bincount(yv[m['train']], minlength=C).float()
     cw = 1.0 / torch.sqrt(counts + 1e-6)
-    cw = cw / cw.sum() * C                       # cùng cách đặt trọng số lớp như baseline
+    cw = cw / cw.sum() * C                       # same class weighting as the baseline
     model = XGAT(x.shape[1], C, args.hidden, args.layers, args.heads, args.dropout,
                  self_only=args.ablate == 'selfloop').to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -182,7 +182,7 @@ def train_one(G, args, seed, device, out_dir):
         model.eval()
         with torch.no_grad():
             pv = model(x, nbr, ew)[m['val']].argmax(1).cpu().numpy()
-        val_mcc = matthews_corrcoef(yv[m['val']].cpu().numpy(), pv)   # chọn mô hình bằng tập val
+        val_mcc = matthews_corrcoef(yv[m['val']].cpu().numpy(), pv)   # model selection on the validation set
         sched.step(val_mcc)
         if val_mcc > best:
             best, best_ep = val_mcc, ep
@@ -219,7 +219,7 @@ def main():
     ap.add_argument('--seeds', type=str, default='0')
     ap.add_argument('--tag', type=str, default='dev')
     ap.add_argument('--ablate', choices=['none', 'selfloop', 'mlp'], default='none',
-                    help="selfloop: chỉ attend vào chính node; mlp: bỏ hai tầng GATv2 (encoder + head)")
+                    help="selfloop: attend only to the node itself; mlp: drop both GATv2 layers (encoder + head)")
     args = ap.parse_args()
     if args.ablate == 'mlp':
         args.layers = 0

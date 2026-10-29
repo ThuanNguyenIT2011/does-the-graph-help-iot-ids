@@ -1,6 +1,6 @@
-"""Random Forest và XGBoost trên cùng split và tiền xử lý (signed log + chuẩn hóa train),
-5 seed. Chọn số cây/số vòng theo val MCC không áp dụng: dùng cấu hình mặc định cố định, không tune trên test.
-Trọng số lớp giống XGAT (1/sqrt(n_c), chuẩn hóa) để so cùng điều kiện."""
+"""Random Forest and XGBoost on the same split and preprocessing (signed log + standardisation on train),
+5 seeds. The number of trees/rounds is not tuned: fixed default settings, nothing is tuned on the test set.
+Class weights as for XGAT (1/sqrt(n_c), normalised) so that the comparison uses the same conditions."""
 import json, os, sys, time, numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from common import load_split, metrics

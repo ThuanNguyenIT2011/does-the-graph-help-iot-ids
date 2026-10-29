@@ -1,8 +1,8 @@
-"""Hình kết quả phân loại của XGAT (5 seed), không chạy lại model.
+"""Classification figures for XGAT (5 seeds), without re-running the model.
 
-Hình 4: ma trận nhầm lẫn chuẩn hóa theo hàng (recall %, trung bình 5 seed), kèm số mẫu test mỗi lớp.
-Hình 5: F1 từng lớp (trung bình ± std qua 5 seed).
-Hình 6: đường cong huấn luyện đọc từ log (mỗi 20 epoch): train loss và val MCC, mỗi seed một đường.
+Figure 4: row-normalised confusion matrix (recall %, mean over 5 seeds) with the number of test flows per class.
+Figure 5: per-class F1 (mean ± std over 5 seeds).
+Figure 6: training curves read from the log (every 20 epochs): train loss and val MCC, one line per seed.
 """
 import json, os, re
 import numpy as np
@@ -11,13 +11,13 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, f1_score
 
-from figs_xai import BLUE, INK, MUTED, GRID, save   # dùng chung style và thư mục đầu ra
+from figs_xai import BLUE, INK, MUTED, GRID, save   # shared style and output directory
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.join(ROOT, 'runs', 'main_k10_5seeds')
 LOG = os.path.join(ROOT, 'runs_main_k10_5seeds.log')
 SEEDS = [0, 1, 2, 3, 4]
-CAT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4']   # thứ tự cố định của bảng màu
+CAT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4']   # fixed palette order
 
 
 def main():
@@ -27,7 +27,7 @@ def main():
     y = P[0]['y_true']
     counts = np.bincount(y, minlength=C)
 
-    # Hình 4
+    # Figure 4
     cms = [confusion_matrix(p['y_true'], p['y_pred'], labels=range(C), normalize='true') * 100 for p in P]
     cm = np.mean(cms, 0)
     fig, ax = plt.subplots(figsize=(4.4, 3.6))
@@ -36,7 +36,7 @@ def main():
     for i in range(C):
         for j in range(C):
             v = cm[i, j]
-            if v > 0:   # ô khác 0 nhưng làm tròn ra 0.0 thì ghi <0.1, để ô trống nghĩa là không có flow nào
+            if v > 0:   # a non-zero cell that rounds to 0.0 is shown as <0.1; an empty cell means no flow
                 ax.text(j, i, f'{v:.1f}' if v >= 0.05 else '<0.1', ha='center', va='center',
                         fontsize=6.5 if v >= 0.05 else 5.5, color='white' if v > 60 else INK)
     ax.set_xticks(range(C), names, rotation=40, ha='right')
@@ -47,7 +47,7 @@ def main():
         sp.set_visible(False)
     save(fig, 'cm_xgat_5seeds')
 
-    # Hình 5
+    # Figure 5
     f1 = np.array([f1_score(p['y_true'], p['y_pred'], labels=range(C), average=None, zero_division=0) for p in P])
     m, sd = f1.mean(0), f1.std(0, ddof=1)
     fig, ax = plt.subplots(figsize=(3.6, 2.4))
@@ -59,7 +59,7 @@ def main():
     ax.yaxis.grid(True, color=GRID, lw=0.6); ax.set_axisbelow(True)
     save(fig, 'f1_per_class_xgat')
 
-    # Hình 6
+    # Figure 6
     pat = re.compile(r'seed (\d+) ep (\d+) loss ([\d.]+) val_mcc ([\d.]+)')
     rec = {}
     for line in open(LOG):

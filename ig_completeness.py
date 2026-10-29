@@ -1,7 +1,7 @@
-"""Kiểm tra completeness của IG đã lưu (không chạy lại IG): với mỗi flow đã giải thích,
-f_c(x) và f_c(baseline) là log-xác suất lớp dự đoán c khi đặc trưng của chính flow là x và là 0
-(đồ thị và láng giềng giữ nguyên, như trong xai.py). Gap = |ΣIG − (f_c(x) − f_c(0))|.
-Ghi kết quả vào runs/xai_main_k10/ig_completeness.json."""
+"""Completeness check of the saved IG (IG is not recomputed): for each explained flow,
+f_c(x) and f_c(baseline) are the log-probability of the predicted class c when the features of the flow itself are x and 0
+(graph and neighbours held fixed, as in xai.py). Gap = |ΣIG − (f_c(x) − f_c(0))|.
+Writes runs/xai_main_k10/ig_completeness.json."""
 import json, os
 import numpy as np
 import torch
