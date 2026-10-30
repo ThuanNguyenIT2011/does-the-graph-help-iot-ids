@@ -1,11 +1,11 @@
-# Does the Graph Help? Label Leakage and a No-Edge Control for Similarity-Graph GNNs in IoT Intrusion Detection
+# No-Edge and Tabular Controls for Evaluating Similarity-Graph GNNs in IoT Intrusion Detection
 
 Code for the paper by Phan Thanh Hy and Nguyen Van Thuan (Posts and Telecommunications Institute of
 Technology, Ho Chi Minh City), submitted to ICCIES 2027.
 
 The paper asks two questions about graph neural networks that build their graph from feature
-similarity on CICIoT2023: whether the graph construction uses held-out labels, and whether the
-graph improves detection. It compares a label-free graph attention detector (XGAT) with controls
+similarity on CICIoT2023: whether the graph construction uses held-out data, and whether the graph
+improves detection. It compares a label-free graph attention detector (XGAT) with controls
 that remove the edges (self-loop, MLP), use only the neighbour labels (kNN vote), or drop the neural
 network (Random Forest, XGBoost), and explains XGAT with Integrated Gradients.
 
@@ -33,6 +33,7 @@ needs more than 4 GB of GPU memory).
 | `xai_selfloop_rank.py` | IG ranking of the self-loop model and Spearman correlation with XGAT |
 | `analysis_paired.py` | Paired per-seed differences, bootstrap intervals, mean and median \|IG\| |
 | `anchor_leak_analysis.py` | Reproduces the ADA-GNetIDS anchor sampling with and without labels |
+| `anchor_graph_audit.py` | Rebuilds the ADA-GNetIDS graph for 20 anchor draws with and without labels, without training |
 | `figs_xai.py`, `figs_results.py` | Figures |
 | `run_all.sh` | Every command used for the paper |
 | `results/` | `results.json` of the runs reported in the paper (metrics per seed and arguments) |
@@ -48,11 +49,11 @@ MCC, mean ± standard deviation over five seeds (kNN vote is deterministic).
 
 | Model | Row-order split | Random split | Row-order, no IAT |
 |---|---|---|---|
-| XGAT | 0.9333 ± 0.0051 | 0.9380 ± 0.0022 | – |
+| XGAT | 0.9333 ± 0.0051 | 0.9380 ± 0.0022 | 0.9352 ± 0.0052 |
 | Self-loop | 0.9389 ± 0.0017 | 0.9394 ± 0.0013 | 0.9409 ± 0.0024 |
-| MLP | 0.9281 ± 0.0052 | 0.9377 ± 0.0023 | – |
-| kNN vote | 0.9405 | 0.9431 | – |
-| Random Forest | 0.9704 ± 0.0002 | 0.9703 ± 0.0011 | – |
+| MLP | 0.9281 ± 0.0052 | 0.9377 ± 0.0023 | 0.9346 ± 0.0040 |
+| kNN vote | 0.9405 | 0.9431 | 0.9403 |
+| Random Forest | 0.9704 ± 0.0002 | 0.9703 ± 0.0011 | 0.9455 ± 0.0008 |
 | XGBoost | 0.9743 ± 0.0004 | 0.9724 ± 0.0007 | 0.9507 ± 0.0004 |
 
 The no-IAT self-loop run was interrupted after two seeds; `results/noiat_selfloop/results_seeds234.json`

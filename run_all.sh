@@ -20,6 +20,10 @@ SPLIT=random TAG=_random python tabular_baselines.py rf
 SPLIT=random TAG=_random python tabular_baselines.py xgb
 DROP=IAT python xgat.py --ablate selfloop --seeds 0,1,2,3,4 --tag noiat_selfloop_5seeds
 DROP=IAT TAG=_noiat python tabular_baselines.py xgb
+DROP=IAT python xgat.py --seeds 0,1,2,3,4 --tag noiat_xgat_5seeds
+DROP=IAT python xgat.py --ablate mlp --seeds 0,1,2,3,4 --tag noiat_mlp_5seeds
+DROP=IAT TAG=_noiat python tabular_baselines.py rf
+DROP=IAT TAG=_noiat python knn_vote.py
 
 # Explanations (Integrated Gradients) and their checks
 python xai.py
@@ -33,3 +37,4 @@ python figs_xai.py
 
 # Label use in the ADA-GNetIDS anchor sampling
 python anchor_leak_analysis.py
+python anchor_graph_audit.py
